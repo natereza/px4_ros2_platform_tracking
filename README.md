@@ -56,6 +56,16 @@ Removemos o bloco
 devices:
   - /dev/dri:/dev/dri
 ```
+Também precisamos montar o workspace ROS 2 do WSL dentro do container, para os arquivos não sumirem quando o container for recriado. Ainda no docker-compose_xhost_wsl.yaml, procurar a parte volumes: e adicionar:
+```bash
+  - ./ws:/root/ws
+```
+A parte de volumes fica parecida com isso:
+```bash
+volumes:
+  - ./PX4-Autopilot:/opt/PX4-Autopilot
+  - ./ws:/root/ws
+```
 ```bash
 Ctrl + O: “write out”, salvar.
 Enter: confirma o nome do arquivo.
