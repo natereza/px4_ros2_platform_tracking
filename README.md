@@ -517,7 +517,9 @@ Encontramos o tópico /mavros/local_position/pose, vamos ver o que tem nele
 ros2 topic echo --once /mavros/local_position/pose
 ```
 Está funcionando e printa PoseStamped
-18. 
+
+
+18. Criar nodo de visão computacional simulada
 
 
 
