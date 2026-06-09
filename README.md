@@ -115,17 +115,17 @@ docker exec -it px4_ros2 bash
 
 7. Comandos que podemos usar (ROS 2 Humble)
 
-ros2                            -> comando principal para interagir com o ROS 2 pelo terminal
-ros2 topic list                 -> lista todos os tópicos ativos
-ros2 topic echo /nome_do_topico -> mostra em tempo real as mensagens publicadas em um tópico
-ros2 topic type /nome_do_topico -> mostra o tipo de mensagem usado por um tópico
-ros2 topic info /nome_do_topico -> mostra informações do tópico, como tipo, publishers e subscribers
-ros2 node list                  -> lista os nós ROS 2 ativos
-ros2 run nome_do_pacote nome_do_executavel -> roda um executável de um pacote ROS 2
-ros2 launch nome_do_pacote arquivo.launch.py -> roda um arquivo de launch para iniciar nós/configurações
-colcon build                    -> compila o workspace ROS 2
-colcon build --packages-select nome_do_pacote -> compila só um pacote específico
-source install/setup.bash       -> carrega no terminal os pacotes compilados
-rclcpp                          -> biblioteca para programar nós ROS 2 em C++
-rclpy                           -> biblioteca para programar nós ROS 2 em Python
-ament_cmake                     -> sistema de build usado em pacotes ROS 2 com C++
+- ros2                            -> comando principal para interagir com o ROS 2 pelo terminal
+- ros2 topic list                 -> lista todos os tópicos ativos
+- ros2 topic echo /nome_do_topico -> mostra em tempo real as mensagens publicadas em um tópico
+- ros2 topic type /nome_do_topico -> mostra o tipo de mensagem usado por um tópico
+- ros2 topic info /nome_do_topico -> mostra informações do tópico, como tipo, publishers e subscribers
+- ros2 node list                  -> lista os nós ROS 2 ativos
+- ros2 run nome_do_pacote nome_do_executavel -> roda um executável de um pacote ROS 2
+- ros2 launch nome_do_pacote arquivo.launch.py -> roda um arquivo de launch para iniciar nós/configurações
+- colcon build                    -> compila o workspace ROS 2
+- colcon build --packages-select nome_do_pacote -> compila só um pacote específico
+- source install/setup.bash       -> carrega no terminal os pacotes compilados
+- rclcpp                          -> biblioteca para programar nós ROS 2 em C++
+- rclpy                           -> biblioteca para programar nós ROS 2 em Python
+- ament_cmake                     -> sistema de build usado em pacotes ROS 2 com C++
