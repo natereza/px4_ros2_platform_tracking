@@ -530,7 +530,548 @@ Está funcionando e printa PoseStamped
 
 
 18. Criar nodo de visão computacional simulada
+Abrir a pasta no vs code
+```bash
+cd ~/mavros_px4/mavros2_px4_docker
+sudo chown -R $USER:$USER ws
+```
+Coloca senha ubuntu e agora abre vs code
+```bash
+code ws/src/ana_platform_control
+```
+
+Dentro da pasta:
+```bash
+ana_platform_control/ana_platform_control/
+```
+cria o arquivo:
+```bash
+simulated_computer_vision.py
+```
+
+Agora vamos escrever o nó
+```bash
+#importar bibliotecas
+#calcular a visao do drone usando abertura da camera do drone como tg
+#e usando a altura do drone
+import math
+
+import rclpy # biblioteca ROS 2 para Python
+from rclpy.node import Node # classe base para criar um nó ROS 2
+
+#mensagens padrão do ROS
+# receber pose do drone e da plataforma
+from geometry_msgs.msg import PoseStamped # header (tempo + frame de referência), pose.position(x, y, z), pose.orientation(orientação em quaternion)
+# publicar o pixel detectado
+from geometry_msgs.msg import PointStamped # header(tempo + frame de referência), point.x, point.y,  point.z
+# para dizer se a baleia está visível
+from std_msgs.msg import Bool #boolean
+
+
+# Assumimos as seguintes configurações para o drone
+# Câmera apontada perfeitamente para baixo
+# Assumimos o yaw como irrelevante, drone não gira em torno do eixo vertical
+# Resolução da câmera
+image_width = 800
+image_height = 600
+# Angulo da câmera em radianos
+fov_x = math.pi/3 # 60 graus 
+fov_y = math.pi/4 # 45 graus 
+
+# taxa de atualização callback
+time_callback = 0.1 #calculado 10 vezes por segundo
+
+
+class SimulatedComputerVision(Node):
+    def __init__(self):
+        super().__init__("simulated_computer_vision")
+
+        self.get_logger().info("Simulated computer vision iniciado")
+
+        # configuração da imagem simulada
+        self.image_width = image_width
+        self.image_height = image_height
+        self.center_x = self.image_width / 2.0
+        self.center_y = self.image_height / 2.0
+
+        # campo de visão da câmera
+        self.fov_x = fov_x
+        self.fov_y = fov_y
+
+
+        # tópicos
+
+        self.drone_pose = None
+        self.platform_pose = None
+
+        self.drone_subscriber = self.create_subscription(
+            PoseStamped,
+            "/mavros/local_position/pose",
+            self.drone_pose_callback,
+            10
+        )
+
+        self.platform_subscriber = self.create_subscription(
+            PoseStamped,
+            "/moving_platform/pose",
+            self.platform_pose_callback,
+            10
+        )
+
+        self.pixel_publisher = self.create_publisher(
+            PointStamped,
+            "/whale_detection/pixel",
+            10
+        )
+
+        self.visible_publisher = self.create_publisher(
+            Bool,
+            "/whale_detection/visible",
+            10
+        )
+        # chama o callback no tempo que quisermos
+        self.timer = self.create_timer(
+            time_callback,
+            self.timer_callback
+        )
+
+    def drone_pose_callback(self, msg):
+        self.drone_pose = msg
+
+    def platform_pose_callback(self, msg):
+        self.platform_pose = msg
+
+    def timer_callback(self):
+        if self.drone_pose is None or self.platform_pose is None:
+            return
+
+        drone_x = self.drone_pose.pose.position.x
+        drone_y = self.drone_pose.pose.position.y
+        drone_z = self.drone_pose.pose.position.z
+
+        platform_x = self.platform_pose.pose.position.x
+        platform_y = self.platform_pose.pose.position.y
+
+        dx = platform_x - drone_x
+        dy = platform_y - drone_y
+
+        altitude = drone_z
+
+        # protege de divisao por zero
+        if altitude <= 0.1:
+            self.publish_detection(False, 0.0, 0.0)
+            return
+
+        # calcula a dimensão da janela enxergada pela camera
+        view_width = 2.0 * altitude * math.tan(self.fov_x / 2.0)
+        view_height = 2.0 * altitude * math.tan(self.fov_y / 2.0)
+
+        # se a distância do centro(x, y) é menor que a janela, está visivel
+        visible = (
+            abs(dx) <= view_width / 2.0 and
+            abs(dy) <= view_height / 2.0
+        )
+
+        if not visible:
+            self.publish_detection(False, 0.0, 0.0)
+            return
+
+
+        # calcula pixels da visão computacional, como se fosse uma imagem
+        # pixel_x = centro_da_imagem + porcentagem_do_deslocamento_ate_a_borda * metade_da_imagem
+        pixel_x = self.center_x + (dx/(view_width / 2.0)) * self.center_x
+        # sinal negativo porque em imagem o eixo y cresce para baixo.
+        pixel_y = self.center_y - (dy/(view_height / 2.0)) * self.center_y
+        #publica visible true e o pixel calculado
+        self.publish_detection(visible, pixel_x, pixel_y)
+
+    def publish_detection(self, visible, pixel_x, pixel_y):
+        now = self.get_clock().now().to_msg()
+
+        visible_msg = Bool()
+        visible_msg.data = visible
+
+        pixel_msg = PointStamped()
+        pixel_msg.header.stamp = now
+        pixel_msg.header.frame_id = "camera_image"
+
+        pixel_msg.point.x = pixel_x
+        pixel_msg.point.y = pixel_y
+        pixel_msg.point.z = 0.0
+
+        self.visible_publisher.publish(visible_msg)
+        self.pixel_publisher.publish(pixel_msg)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = SimulatedComputerVision()
+    rclpy.spin(node)
+
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
+```
+
+Agora colocamos no setup.py, dentro de console_scripts:
+```bash
+'simulated_computer_vision = ana_platform_control.simulated_computer_vision:main',
+```
+
+Confere se no package.xml tem:
+
+```bash
+<depend>std_msgs</depend>
+```
+Se não tiver, coloca.
+
+Agora vamos ver se está funcionando certinho
+```bash
+cd ~/mavros_px4/mavros2_px4_docker
+docker exec -it px4_ros2 bash
+```
+
+```bash
+cd /root/ws
+colcon build --symlink-install --packages-select ana_platform_control
+source install/setup.bash
+ros2 run ana_platform_control simulated_computer_vision
+```
+Deve aparecer "[INFO] [1781196119.322675343] [simulated_computer_vision]: Simulated computer vision iniciado"
+
+Agora, para ver se ele está publicando, abre outro terminal Ubuntu
+```bash
+docker exec -it px4_ros2 bash
+```
+Deve aparecer "/whale_detection/pixel" e "/whale_detection/visible"
+```bash
+source /root/ws/install/setup.bash
+ros2 topic list | grep whale
+```
+
+
+Agora vamos construir o nodo do controlador
+
+Criar arquivo pid.py
+```bash
+class PID:
+    def __init__(self, kp, ki, kd, dt):
+        #ganhos 
+        self.kp = kp #proporcional
+        self.ki = ki #integral
+        self.kd = kd #derivativo
+
+        #período de loop
+        self.dt = dt
+
+        #valores
+        self.referencia = {"x": 0.0, "y": 0.0}
+        self.erro = {"x": 0.0, "y": 0.0}
+        self.erro_anterior = {"x": 0.0, "y": 0.0}
+        self.integral = {"x": 0.0, "y": 0.0}
+        self.derivada = {"x": 0.0, "y": 0.0}
+
+    #Metodos
+
+    def atualizar_referencia(self, x, y):
+        self.referencia['x'] = x
+        self.referencia['y'] = y
+
+    def atualizar_erro(self, coord_x, coord_y):
+        self.erro_anterior['x'] = self.erro['x']
+        self.erro_anterior['y'] = self.erro['y']
+
+        self.erro['x'] = self.referencia["x"] - coord_x
+        self.erro['y'] = self.referencia["y"] - coord_y
+
+    def atualizar_integral(self):
+        self.integral["x"] += self.erro['x'] * self.dt
+        self.integral["y"] += self.erro['y'] * self.dt
+
+    def atualizar_derivada(self):
+        self.derivada["x"] = (self.erro['x'] - self.erro_anterior['x']) / self.dt
+        self.derivada["y"] = (self.erro['y'] - self.erro_anterior['y']) / self.dt
+
+    def atualizar_pid(self, coord_x, coord_y):
+        self.atualizar_erro(coord_x, coord_y)
+        self.atualizar_integral()
+        self.atualizar_derivada()
+
+    def calculo_variacoes(self):
+        vx = self.kp * self.erro['x'] + self.ki * self.integral['x'] + self.kd * self.derivada['x']
+        vy = self.kp * self.erro['y'] + self.ki * self.integral['y'] + self.kd * self.derivada['y']
+        
+        
+        return vx, vy
+
+```
+
+OK ARQUIVO TEMPORÀRIO
+
+cria controller.py
+```bash
+import rclpy
+from rclpy.node import Node
+
+from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
+from rclpy.qos import HistoryPolicy
+from rclpy.qos import DurabilityPolicy
+
+from geometry_msgs.msg import PointStamped
+from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import TwistStamped
+from std_msgs.msg import Bool
+
+from mavros_msgs.msg import State
+from mavros_msgs.srv import CommandBool
+from mavros_msgs.srv import SetMode
+
+
+class DronePixelController(Node):
+    def __init__(self):
+        super().__init__("drone_pixel_controller")
+
+        self.get_logger().info("Drone pixel controller iniciado")
+
+        # Imagem simulada
+        self.image_width = 800
+        self.image_height = 600
+        self.center_x = self.image_width / 2.0
+        self.center_y = self.image_height / 2.0
+
+        # Drone sobe e tenta manter 10 m
+        self.target_altitude = 10.0
+
+        # Ganhos simples
+        self.k_pixel = 0.01
+        self.k_z = 0.5
+
+        # Limites de velocidade
+        self.max_xy_speed = 2.0
+        self.max_z_speed = 0.8
+
+        # Estados recebidos
+        self.pixel = None
+        self.visible = False
+        self.pose = None
+        self.state = State()
+
+        # QoS compatível com tópicos do MAVROS/PX4
+        mavros_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+
+        # Recebe pixel detectado
+        self.create_subscription(
+            PointStamped,
+            "/whale_detection/pixel",
+            self.pixel_callback,
+            10
+        )
+
+        # Recebe se alvo está visível
+        self.create_subscription(
+            Bool,
+            "/whale_detection/visible",
+            self.visible_callback,
+            10
+        )
+
+        # Recebe pose do drone
+        self.create_subscription(
+            PoseStamped,
+            "/mavros/local_position/pose",
+            self.pose_callback,
+            mavros_qos
+        )
+
+        # Recebe estado do PX4/MAVROS
+        self.create_subscription(
+            State,
+            "/mavros/state",
+            self.state_callback,
+            10
+        )
+
+        # Publica comando de velocidade
+        self.velocity_publisher = self.create_publisher(
+            TwistStamped,
+            "/mavros/setpoint_velocity/cmd_vel",
+            10
+        )
+
+        # Serviços para OFFBOARD e ARM
+        self.arming_client = self.create_client(
+            CommandBool,
+            "/mavros/cmd/arming"
+        )
+
+        self.set_mode_client = self.create_client(
+            SetMode,
+            "/mavros/set_mode"
+        )
+
+        self.last_service_call = self.get_clock().now()
+
+        # Loop de controle a 50 Hz
+        self.timer = self.create_timer(0.02, self.timer_callback)
+
+    def pixel_callback(self, msg):
+        self.pixel = msg
+
+    def visible_callback(self, msg):
+        self.visible = msg.data
+
+    def pose_callback(self, msg):
+        self.pose = msg
+
+    def state_callback(self, msg):
+        self.state = msg
+
+    def timer_callback(self):
+        if self.pose is None:
+            self.publish_velocity(0.0, 0.0, 0.0)
+            return
+
+        self.try_offboard_and_arm()
+
+        drone_z = self.pose.pose.position.z
+
+        # Controle vertical: subir até 10 m
+        error_z = self.target_altitude - drone_z
+        vz = self.k_z * error_z
+        vz = self.clamp(vz, -self.max_z_speed, self.max_z_speed)
+
+        if abs(error_z) < 0.2:
+            vz = 0.0
+
+        # Controle horizontal pelo pixel
+        vx = 0.0
+        vy = 0.0
+
+        if self.visible and self.pixel is not None:
+            pixel_x = self.pixel.point.x
+            pixel_y = self.pixel.point.y
+
+            error_x = pixel_x - self.center_x
+            error_y = pixel_y - self.center_y
+
+            vx = self.k_pixel * error_x
+
+            # pixel_y cresce para baixo; por isso o sinal negativo
+            vy = -self.k_pixel * error_y
+
+            vx = self.clamp(vx, -self.max_xy_speed, self.max_xy_speed)
+            vy = self.clamp(vy, -self.max_xy_speed, self.max_xy_speed)
+
+        self.publish_velocity(vx, vy, vz)
+
+    def publish_velocity(self, vx, vy, vz):
+        msg = TwistStamped()
+
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "map"
+
+        msg.twist.linear.x = vx
+        msg.twist.linear.y = vy
+        msg.twist.linear.z = vz
+
+        msg.twist.angular.x = 0.0
+        msg.twist.angular.y = 0.0
+        msg.twist.angular.z = 0.0
+
+        self.velocity_publisher.publish(msg)
+
+    def try_offboard_and_arm(self):
+        now = self.get_clock().now()
+        elapsed = (now - self.last_service_call).nanoseconds * 1e-9
+
+        if elapsed < 2.0:
+            return
+
+        self.last_service_call = now
+
+        if not self.state.connected:
+            self.get_logger().info("Aguardando conexão com PX4/MAVROS...")
+            return
+
+        if self.state.mode != "OFFBOARD":
+            if self.set_mode_client.service_is_ready():
+                request = SetMode.Request()
+                request.custom_mode = "OFFBOARD"
+                self.set_mode_client.call_async(request)
+                self.get_logger().info("Solicitando OFFBOARD")
+            return
+
+        if not self.state.armed:
+            if self.arming_client.service_is_ready():
+                request = CommandBool.Request()
+                request.value = True
+                self.arming_client.call_async(request)
+                self.get_logger().info("Solicitando ARM")
+            return
+
+    def clamp(self, value, min_value, max_value):
+        return max(min_value, min(max_value, value))
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = DronePixelController()
+    rclpy.spin(node)
+
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
+```
+
+agora bota no setup.py
+```bash
+'controller = ana_platform_control.controller:main',
+```
+
+e bota no package.xml
+```bash
+<depend>mavros_msgs</depend>
+```
 
 
 
 
+Rodando do zero
+Terminal 1:
+```bash
+cd ~/mavros_px4/mavros2_px4_docker
+xhost +local:docker
+docker compose -f docker-compose_xhost_wsl.yaml up -d
+docker exec -it px4_ros2 bash
+```
+Dentro:
+```bash
+cd /opt/PX4-Autopilot
+make px4_sitl gz_x500
+```
+Terminal 2:
+
+docker exec -it px4_ros2 bash
+
+Dentro:
+
+cd /root/ws
+colcon build --symlink-install --packages-select ana_platform_control
+source install/setup.bash
+ros2 run ana_platform_control moving_platform_controller
+
+Aí a plataforma deve mexer. Depois disso, seguimos para o nó da câmera simulada.
